@@ -69,7 +69,6 @@ static void *extend_heap(size_t words);
 static char *find_fit(size_t size);
 static void place(void *ptr, size_t size);
 static void spliting(void *ptr, size_t size);
-int g_search_steps=0, g_split_cnt=0, g_coal_cnt=0, g_extend_cnt=0;
 
 int mm_init(void)
 {
