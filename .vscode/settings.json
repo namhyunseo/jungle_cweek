@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "cstdlib": "c",
+        "stdbool.h": "c"
+    },
+    "C_Cpp.dimInactiveRegions": false
+}
