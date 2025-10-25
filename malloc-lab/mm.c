@@ -135,25 +135,13 @@ void *mm_malloc(size_t size)
 
 }
 
-static char *find_fit(size_t size)
+static char *find_fit(size_t asize)
 {
-    char *ptr = NEXT_BLKP(heap_listp);
-
-    /*의사코드
-    while(block의 사이즈가 0이면 -> 에필로그가 아닐 때 까지){
-        if(size > GET_size(ptr) && GET_ALLOC(ptr)){
-            return ptr;
-        }else ptr = 다음 블럭 header로
-    }
-    if(GET_SIZE(ptr) == 0){ 에필이라면
-        if(extend_heap(size/WSIZE)==NULL) return NULL;
-        return ptr;
-    }
-    */
-    while(GET_SIZE(ptr) != 0){
-        if(size <= GET_SIZE(ptr) && GET_ALLOC(ptr) == 0){
-            return ptr;
-        }else ptr = HDRP(NEXT_BLKP(ptr));
+    void *bp = NEXT_BLKP(heap_listp);
+    for (; GET_SIZE(HDRP(bp)) != 0; bp = NEXT_BLKP(bp)) {
+        if (!GET_ALLOC(HDRP(bp)) && asize <= GET_SIZE(HDRP(bp))) {
+            return bp;
+        }
     }
     return NULL;
 }
@@ -165,7 +153,7 @@ void place(void *ptr, size_t asize){
     if(rem >= 2*DSIZE) spliting(ptr, asize);
     else {
         PUT(HDRP(ptr), PACK(csize, 1));
-        PUT(HDRP(ptr), PACK(csize, 1));
+        PUT(FTRP(ptr), PACK(csize, 1));
     }
 }
 
@@ -181,8 +169,8 @@ void spliting(void *ptr, size_t asize)
     PUT(FTRP(ptr), PACK(asize, 1));
 
     void *next = NEXT_BLKP(ptr);
-    PUT(HDRP(next),PACK(rem, 1));
-    PUT(FTRP(next),PACK(rem, 1));
+    PUT(HDRP(next),PACK(rem, 0));
+    PUT(FTRP(next),PACK(rem, 0));
 }
 
 // ptr -> payload 시작 주소 
@@ -220,7 +208,7 @@ static void *coalesce(void *ptr)
         PUT(HDRP(PREV_BLKP(ptr)), PACK(size, 0));
         return PREV_BLKP(ptr);
     }else{
-        size += GET_SIZE(HDRP((PREV_BLKP(ptr)))) + GET_SIZE(FTRP(NEXT_BLKP(ptr)));
+        size += GET_SIZE(HDRP(PREV_BLKP(ptr))) + GET_SIZE(HDRP(NEXT_BLKP(ptr)));
         PUT(HDRP(PREV_BLKP(ptr)), PACK(size, 0));
         PUT(FTRP(NEXT_BLKP(ptr)), PACK(size, 0));
         return PREV_BLKP(ptr);
