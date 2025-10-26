@@ -61,17 +61,21 @@ team_t team = {
 // 다음, 이전 블록의 페이로드 주소
 #define NEXT_BLKP(bp)  ((char *)(bp) + GET_SIZE(((char *)(bp) - WSIZE)))
 #define PREV_BLKP(bp)  ((char *)(bp) - GET_SIZE(((char *)(bp) - DSIZE)))
-// // explicit list 포인터
-// #define LIST_NEXT(bp)   (char *)(bp)
-// #define LIST_PREV(bp)   ((char *)(bp) + WSIZE)
+// 해당 블록의 list연결 포인터 NEXT, PREV
+#define NEXT_LIST(bp)   ((char *)(bp))
+#define PREV_LIST(bp)   ((char *)(bp) + WSIZE)
 
-static char *heap_listp = NULL; //프롤로그의 payload 진입점
+
 static void *coalesce(void *ptr);
 static void *extend_heap(size_t words);
 static char *first_fit(size_t size);
 static void place(void *ptr, size_t size);
 static void spliting(void *ptr, size_t size);
-char *next_fit(size_t size);
+static char *next_fit(size_t size);
+static char *heap_listp = NULL; //프롤로그의 payload 진입점
+static char *exp_list_head = NULL; //list head
+static void add_list(void *bp);
+static void delete_list(void *bp);
 
 //////////////////////////////////////////////////////////////////////////
 
@@ -88,6 +92,9 @@ int mm_init(void)
 
     // extend 시도 후 실패 시 -1 반환
     if(extend_heap(CHUNKSIZE/WSIZE)==NULL)return -1;
+    // extend된 블록을 free list에 넣어서 free list 초기화
+    // head는 블록의 페이로드 주소를 가리키고 있음.
+    exp_list_head = NEXT_BLKP(heap_listp);
     return 0;
 }
 
@@ -109,6 +116,39 @@ static void *extend_heap(size_t words)
     return coalesce(bp);
 }
 /////////////////////////////////////////////////////////////////////
+void add_list(void *bp){
+    // 특정 블럭의 주소를 받아와서 LIFO형식으로 free list에 추가한다.
+    // case 1 => head가 비어있는 경우
+    if(exp_list_head == NULL){
+        exp_list_head = bp;
+    }
+    else{ // head가 비어있지 않은 경우
+        PUT(PREV_LIST(bp), exp_list_head);
+        PUT(PREV_BLKP(exp_list_head), bp); //원래 head에 있던 요소의 prev를 bp로
+        PUT(NEXT_LIST(bp), NULL);
+        exp_list_head = bp;
+    }
+}
+
+// void delete_list(void *bp){
+//     // 삭제 할 노드가 중간에 있을 경우
+// void delete_list(void *bp)
+// {
+//     void *prev = PREV_LIST(bp);
+//     void *next = NEXT_LIST(bp);
+
+//     // 앞쪽 연결 수정
+//     if (prev) NEXT_LIST(prev) = next;
+//     else      exp_list_head   = next;   // bp가 헤드였던 경우
+
+//     // 뒤쪽 연결 수정
+//     if (next) PREV_LIST(next) = prev;
+
+//     // (선택) bp 정리
+//     PREV_LIST(bp) = NULL;
+//     NEXT_LIST(bp) = NULL;
+// }
+
 
 void *mm_malloc(size_t size)
 {
@@ -134,6 +174,7 @@ void *mm_malloc(size_t size)
     return ptr;
 }
 
+/* first-fit for implicit
 char *first_fit(size_t asize)
 {
     void *bp = NEXT_BLKP(heap_listp);
@@ -145,12 +186,30 @@ char *first_fit(size_t asize)
     }
     return NULL;
 }
+*/
 
-// char *next_fit(size_t size)
-// {
-//     return;
-// }
+/* next-fit 
+char *next_fit(size_t size)
+{
+    return;
+}
+*/
 
+char *first_fit(size_t asize)
+{
+    char *bp;
+    if (asize == 0) return NULL;
+    if(exp_list_head!=NULL) bp = exp_list_head; //head에 연결된 주소
+
+    while(bp != NULL){
+        if(!GET_ALLOC(HDRP(bp)) && asize <= GET_SIZE(HDRP(bp))){
+            return bp;
+        }
+        else{
+            // bp = *bp;
+        }
+    }
+}
 void place(void *ptr, size_t asize){
     size_t csize = GET_SIZE(HDRP(ptr));
     size_t rem = csize - asize;
@@ -237,3 +296,4 @@ void *mm_realloc(void *ptr, size_t size)
     mm_free(oldptr);
     return newptr;
 }
+
