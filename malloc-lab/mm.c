@@ -53,17 +53,20 @@ team_t team = {
 #define GET(p)       (*(unsigned int *)(p))
 #define PUT(p, val)  (*(unsigned int *)(p) = (val))
 // 현재 블럭의 주소에서 size, alloc 여부
-#define GET_SIZE(p)  (GET(p) & ~0x7)
-#define GET_ALLOC(p) (GET(p) & 0x1)
+#define GET_SIZE(p)     (GET(p) & ~0x7)
+#define GET_ALLOC(p)    (GET(p) & 0x1)
 // 현재 블럭의 헤더, 푸터 정보
 #define HDRP(bp)       ((char *)(bp) - WSIZE)
 #define FTRP(bp)       ((char *)(bp) + GET_SIZE(HDRP(bp)) - DSIZE)
 // 다음, 이전 블록의 페이로드 주소
 #define NEXT_BLKP(bp)  ((char *)(bp) + GET_SIZE(((char *)(bp) - WSIZE)))
 #define PREV_BLKP(bp)  ((char *)(bp) - GET_SIZE(((char *)(bp) - DSIZE)))
-// 해당 블록의 list연결 포인터 NEXT, PREV
-#define NEXT_LIST(bp)   ((char *)(bp))
-#define PREV_LIST(bp)   ((char *)(bp) + WSIZE)
+
+/////// explicit 전용 메서드 ///////////
+// 가용 리스트에서 해당 블록의 앞, 뒤에 연결된 요소
+// LLP List Linked prev, LLN List Linked next
+#define NEXT(bp)     (*((void **)(bp)))
+#define PREV(bp)     (*((void **)((char *)(bp) + WSIZE)))
 
 
 static void *coalesce(void *ptr);
@@ -73,7 +76,7 @@ static void place(void *ptr, size_t size);
 static void spliting(void *ptr, size_t size);
 static char *next_fit(size_t size);
 static char *heap_listp = NULL; //프롤로그의 payload 진입점
-static char *exp_list_head = NULL; //list head
+static void *exp_list_head = NULL; //list head
 static void add_list(void *bp);
 static void delete_list(void *bp);
 
@@ -116,39 +119,31 @@ static void *extend_heap(size_t words)
     return coalesce(bp);
 }
 /////////////////////////////////////////////////////////////////////
-void add_list(void *bp){
-    // 특정 블럭의 주소를 받아와서 LIFO형식으로 free list에 추가한다.
-    // case 1 => head가 비어있는 경우
-    if(exp_list_head == NULL){
-        exp_list_head = bp;
-    }
-    else{ // head가 비어있지 않은 경우
-        PUT(PREV_LIST(bp), exp_list_head);
-        PUT(PREV_BLKP(exp_list_head), bp); //원래 head에 있던 요소의 prev를 bp로
-        PUT(NEXT_LIST(bp), NULL);
-        exp_list_head = bp;
-    }
+void add_list(void *bp)
+{
+    //LIFO -> 새로운 블럭을 head에 연결
+    //head에 연결된게 없을 때
+    //head에 연결된게 있을 때
+    PREV(bp) = NULL;
+    NEXT(bp) = exp_list_head;
+
+    if(exp_list_head != NULL) PREV(exp_list_head) = bp;
+    exp_list_head = bp;
 }
 
-// void delete_list(void *bp){
-//     // 삭제 할 노드가 중간에 있을 경우
-// void delete_list(void *bp)
-// {
-//     void *prev = PREV_LIST(bp);
-//     void *next = NEXT_LIST(bp);
+void delete_list(void *bp)
+{
+    void *prev = PREV(bp);
+    void *next = NEXT(bp);
 
-//     // 앞쪽 연결 수정
-//     if (prev) NEXT_LIST(prev) = next;
-//     else      exp_list_head   = next;   // bp가 헤드였던 경우
+    if(prev) NEXT(prev) = next;
+    else exp_list_head = next;
 
-//     // 뒤쪽 연결 수정
-//     if (next) PREV_LIST(next) = prev;
+    if(next) PREV(next) = prev;
 
-//     // (선택) bp 정리
-//     PREV_LIST(bp) = NULL;
-//     NEXT_LIST(bp) = NULL;
-// }
-
+    PREV(bp) = NULL;
+    NEXT(bp) = NULL;
+}
 
 void *mm_malloc(size_t size)
 {
