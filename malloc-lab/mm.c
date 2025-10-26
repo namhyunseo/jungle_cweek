@@ -69,7 +69,7 @@ team_t team = {
 #define PREV(bp)     (*((void **)((char *)(bp) + WSIZE)))
 
 
-static void *coalesce(void *ptr);
+static void *coalesce(void *bp);
 static void *extend_heap(size_t words);
 static char *first_fit(size_t size);
 static void place(void *ptr, size_t size);
@@ -95,9 +95,6 @@ int mm_init(void)
 
     // extend 시도 후 실패 시 -1 반환
     if(extend_heap(CHUNKSIZE/WSIZE)==NULL)return -1;
-    // extend된 블록을 free list에 넣어서 free list 초기화
-    // head는 블록의 페이로드 주소를 가리키고 있음.
-    exp_list_head = NEXT_BLKP(heap_listp);
     return 0;
 }
 
@@ -115,7 +112,6 @@ static void *extend_heap(size_t words)
     PUT(HDRP(bp), PACK(size, 0)); // header
     PUT(FTRP(bp), PACK(size, 0)); // footer
     PUT(HDRP(NEXT_BLKP(bp)), PACK(0,1)); //new epilheader
-
     return coalesce(bp);
 }
 /////////////////////////////////////////////////////////////////////
@@ -123,7 +119,7 @@ void add_list(void *bp)
 {
     //LIFO -> 새로운 블럭을 head에 연결
     //head에 연결된게 없을 때
-    //head에 연결된게 있을 때
+    //head에 연결된게 있을 
     PREV(bp) = NULL;
     NEXT(bp) = exp_list_head;
 
@@ -138,7 +134,6 @@ void delete_list(void *bp)
 
     if(prev) NEXT(prev) = next;
     else exp_list_head = next;
-
     if(next) PREV(next) = prev;
 
     PREV(bp) = NULL;
@@ -190,21 +185,20 @@ char *next_fit(size_t size)
 }
 */
 
+// for explicit 
 char *first_fit(size_t asize)
 {
-    char *bp;
+    void *bp;
     if (asize == 0) return NULL;
-    if(exp_list_head!=NULL) bp = exp_list_head; //head에 연결된 주소
+    bp = exp_list_head; //head에 연결된 주소
 
-    while(bp != NULL){
-        if(!GET_ALLOC(HDRP(bp)) && asize <= GET_SIZE(HDRP(bp))){
+    for(; NEXT(bp)!=NULL; bp = NEXT(bp)){
+        if(asize <= GET_SIZE(HDRP(bp))){
             return bp;
-        }
-        else{
-            // bp = *bp;
         }
     }
 }
+
 void place(void *ptr, size_t asize){
     size_t csize = GET_SIZE(HDRP(ptr));
     size_t rem = csize - asize;
@@ -213,14 +207,13 @@ void place(void *ptr, size_t asize){
     else {
         PUT(HDRP(ptr), PACK(csize, 1));
         PUT(FTRP(ptr), PACK(csize, 1));
+        delete_list(ptr);
     }
 }
-
+/* for implicit
 void spliting(void *ptr, size_t asize)
 {
-    /*
-    분할 할 block과 넣을 블럭의 사이즈를 가져온다.
-    */
+    // 분할 할 block과 넣을 블럭의 사이즈를 가져온다.
     size_t csize = GET_SIZE(HDRP(ptr));
     size_t rem = csize - asize;
 
@@ -231,12 +224,28 @@ void spliting(void *ptr, size_t asize)
     PUT(HDRP(next),PACK(rem, 0));
     PUT(FTRP(next),PACK(rem, 0));
 }
+*/
+
+// for explicit
+void spliting(void *ptr, size_t asize)
+{
+    size_t csize = GET_SIZE(HDRP(ptr));
+    size_t rem = csize - asize;
+    
+    delete_list(ptr); //아예 분리 해버리고 자른부분만 맨앞으로 연결
+    PUT(HDRP(ptr), PACK(asize, 1));
+    PUT(FTRP(ptr), PACK(asize, 1));
+
+    void *next = NEXT_BLKP(ptr);
+    PUT(HDRP(next),PACK(rem, 0));
+    PUT(FTRP(next),PACK(rem, 0));
+    add_list(next); // 잘랐던 부분 다시 넣어줌
+}
 
 // ptr -> payload 시작 주소 
 void mm_free(void *ptr)
 {
     if(ptr == NULL) return;
-
     size_t size = GET_SIZE(HDRP(ptr)); //현재 블록 크기
     PUT(HDRP(ptr), PACK(size, 0)); // header -> free로 표시
     PUT(FTRP(ptr), PACK(size, 0)); // putter 가용 표시
@@ -245,7 +254,7 @@ void mm_free(void *ptr)
 }
 
 
-
+/* for implicit
 static void *coalesce(void *ptr)
 {
     size_t prev = GET_ALLOC(FTRP(PREV_BLKP(ptr)));
@@ -274,6 +283,46 @@ static void *coalesce(void *ptr)
     }
     return ptr;
 }
+*/
+
+void *coalesce(void *bp){
+    size_t prev = GET_ALLOC(FTRP(PREV_BLKP(bp)));
+    size_t next = GET_ALLOC(HDRP(NEXT_BLKP(bp)));
+    size_t curr = GET_SIZE(HDRP(bp));
+
+    if(prev && next){
+        add_list(bp);
+        return bp;
+    }else if (prev && !next)
+    {
+        //제거하고, 병합하고, list에 삽입
+        delete_list(NEXT_BLKP(bp));
+        curr += GET_SIZE(HDRP(NEXT_BLKP(bp)));
+        PUT(HDRP(bp), PACK(curr, 0));
+        PUT(FTRP(bp), PACK(curr, 0));
+        add_list(bp);
+        return PREV_BLKP(bp);
+    }else if (!prev && next)
+    {
+        delete_list(PREV_BLKP(bp));
+        curr += GET_SIZE(HDRP(PREV_BLKP(bp)));
+        PUT(FTRP(bp), PACK(curr, 0));
+        PUT(HDRP(PREV_BLKP(bp)), PACK(curr, 0));
+        add_list(PREV_BLKP(bp));
+        return bp;
+    }else
+    {
+        delete_list(PREV_BLKP(bp));
+        delete_list(NEXT_BLKP(bp));
+        curr += GET_SIZE(HDRP(PREV_BLKP(bp))) + GET_SIZE(HDRP(NEXT_BLKP(bp)));
+        PUT(HDRP(PREV_BLKP(bp)), PACK(curr, 0));
+        PUT(FTRP(NEXT_BLKP(bp)), PACK(curr, 0));
+        add_list(PREV_BLKP(bp));
+        return PREV_BLKP(bp);
+    }
+    return bp;
+    
+}  
 
 void *mm_realloc(void *ptr, size_t size)
 {
