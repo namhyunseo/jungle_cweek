@@ -70,9 +70,9 @@ team_t team = {
 // LLP List Linked prev, LLN List Linked next
 #define NEXT(bp)     (*((void **)(bp)))
 #define PREV(bp)     (*((void **)((char *)(bp) + PTRSZ)))
-#define PTRSZ  ((int)sizeof(void*))
+#define PTRSZ       (sizeof(void*))
 
-#define MIN     (2*WSIZE + 2*PTRSZ) //64bit-> 24B
+#define MIN     (DSIZE + 2*PTRSZ) //64bit-> 24B
 // #define MIN ALIGN(2*WSIZE + 2*PTRSZ)
 
 
@@ -126,10 +126,12 @@ static inline int is_linked(void *bp){
 void add_list(void *bp)
 {
     //리스트에 이미 있는 요청이 들어올 경우
-    if (is_linked(bp)) delete_list(bp);
+    // if (is_linked(bp)) delete_list(bp);
     //LIFO -> 새로운 블럭을 head에 연결
     //head에 연결된게 없을 때
     //head에 연결된게 있을 때
+
+    if(bp == exp_list_head) return;
     PREV(bp) = NULL;
     NEXT(bp) = exp_list_head;
     
@@ -168,17 +170,19 @@ void delete_list(void *bp)
 
 void *mm_malloc(size_t size)
 {
-    printf("malloc 처리 : \n");
+    // printf("malloc 처리 : \n");
     size_t asize = ALIGN(size + DSIZE);
+    // size_t asize;
     size_t extendsz;
     void *ptr;
-    if(size == 0) return NULL;
+    if(asize == 0) return NULL;
     // size 정렬 -> 최소 크기 16바이트 + 8의 배수
-    if(asize <= DSIZE){ // 24B 보다 작을 경우
-        asize = MIN; // 24로 설정
-    }else {
-        asize = DSIZE * ((size + (DSIZE) + (DSIZE-1))/DSIZE);
+    if(asize < MIN){ // 24B 보다 작을 경우
+        asize = 2 * MIN; // 24로 설정
     }
+    // else {
+    //     asize = DSIZE * ((size + (DSIZE) + (DSIZE-1))/DSIZE);
+    // }
     // asize = MAX(ALIGN(size + 2*WSIZE), MIN);
     // free block탐색 -> first fit
     if((ptr = first_fit(asize)) != NULL){
@@ -316,94 +320,63 @@ static void *coalesce(void *ptr)
 }
 */
 
-// void *coalesce(void *bp){
-//     volatile size_t curr = GET_SIZE(HDRP(bp));
-//     volatile size_t prev = GET_ALLOC(FTRP(PREV_BLKP(bp)));
-//     volatile size_t next = GET_ALLOC(HDRP(NEXT_BLKP(bp)));
-//     // size_t prev = 0;
-//     // size_t next = 0;
+void *coalesce(void *bp){
+    volatile size_t curr = GET_SIZE(HDRP(bp));
+    volatile size_t prev = GET_ALLOC(FTRP(PREV_BLKP(bp)));
+    volatile size_t next = GET_ALLOC(HDRP(NEXT_BLKP(bp)));
+    // size_t prev = 0;
+    // size_t next = 0;
 
-//     if(prev && next){
-//         add_list(bp);
-//         return bp;
-//     }else if (prev && !next)
-//     {
-//         //제거하고, 병합하고, list에 삽입
-//         delete_list(NEXT_BLKP(bp));
-//         curr += GET_SIZE(HDRP(NEXT_BLKP(bp)));
-//         PUT(HDRP(bp), PACK(curr, 0));
-//         PUT(FTRP(bp), PACK(curr, 0));
-//         add_list(bp);
-//     }else if (!prev && next){
-//         delete_list(PREV_BLKP(bp));
-//         curr += GET_SIZE(HDRP(PREV_BLKP(bp)));
-//         PUT(HDRP(PREV_BLKP(bp)), PACK(curr, 0));
-//         PUT(FTRP(bp), PACK(curr, 0));
-//         bp = PREV_BLKP(bp);
-//         add_list(bp);
-//     }else{ // prev, next 모두 가용
-//         void *prevp = PREV_BLKP(bp);
-//         void *nextp = NEXT_BLKP(bp);
-//     // 리스트에서 '두 블록'을 빼야 함
-//         delete_list(prevp);
-//         delete_list(nextp);
-//         curr += GET_SIZE(HDRP(prevp)) + GET_SIZE(HDRP(nextp));
-//     // 헤더는 prev에, 푸터는 next의 위치에 써야 블록 경계가 맞음
-//         PUT(HDRP(prevp), PACK(curr, 0));
-//         PUT(FTRP(nextp), PACK(curr, 0));
-//         bp = prevp; // 새 병합 블록의 bp는 prev의 payload
-//         add_list(bp);
-//     }
-    
-//     return bp;
-    
-// }  
-
-static void *coalesce(void *bp)
-{
-    size_t prev_alloc = GET_ALLOC(FTRP(PREV_BLKP(bp)));
-    size_t next_alloc = GET_ALLOC(HDRP(NEXT_BLKP(bp)));
-    size_t size = GET_SIZE(HDRP(bp));
-    if (prev_alloc && !next_alloc) {            // Case 2
+    if(prev && next){
+        add_list(bp);
+        return bp;
+    }else if (prev && !next)
+    {
+        //제거하고, 병합하고, list에 삽입
         delete_list(NEXT_BLKP(bp));
-        size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
-        PUT(HDRP(bp), PACK(size, 0));
-        PUT(FTRP(bp), PACK(size, 0));
-    }
-    else if (!prev_alloc && next_alloc) {      // Case 3
+        curr += GET_SIZE(HDRP(NEXT_BLKP(bp)));
+        PUT(HDRP(bp), PACK(curr, 0));
+        PUT(FTRP(bp), PACK(curr, 0));
+    }else if (!prev && next){
         delete_list(PREV_BLKP(bp));
-        size += GET_SIZE(HDRP(PREV_BLKP(bp)));
-        PUT(FTRP(bp), PACK(size, 0));
-        PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
+        curr += GET_SIZE(HDRP(PREV_BLKP(bp)));
+        PUT(HDRP(PREV_BLKP(bp)), PACK(curr, 0));
+        PUT(FTRP(bp), PACK(curr, 0));
         bp = PREV_BLKP(bp);
+    }else{ // prev, next 모두 가용
+        void *prevp = PREV_BLKP(bp);
+        void *nextp = NEXT_BLKP(bp);
+    // 리스트에서 '두 블록'을 빼야 함
+        delete_list(prevp);
+        delete_list(nextp);
+        curr += GET_SIZE(HDRP(prevp)) + GET_SIZE(HDRP(nextp));
+    // 헤더는 prev에, 푸터는 next의 위치에 써야 블록 경계가 맞음
+        PUT(HDRP(prevp), PACK(curr, 0));
+        PUT(FTRP(nextp), PACK(curr, 0));
+        bp = prevp; // 새 병합 블록의 bp는 prev의 payload
     }
-    else if (!prev_alloc && !next_alloc) {     // Case 4
-        delete_list(PREV_BLKP(bp));
-        delete_list(NEXT_BLKP(bp));
-        size += GET_SIZE(HDRP(PREV_BLKP(bp))) + GET_SIZE(HDRP(NEXT_BLKP(bp)));
-        PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
-        PUT(FTRP(NEXT_BLKP(bp)), PACK(size, 0));
-        bp = PREV_BLKP(bp);
-    }
+    
     add_list(bp);
     return bp;
+    
 }
-
-
 
 void *mm_realloc(void *ptr, size_t size)
 {
-    void *oldptr = ptr;
-    void *newptr;
-    size_t copySize;
+    if (ptr == NULL)
+        return mm_malloc(size);
+    if (size == 0) {
+        mm_free(ptr);
+        return NULL;
+    }
 
-    newptr = mm_malloc(size);
+    void *newptr = mm_malloc(size);
     if (newptr == NULL)
         return NULL;
-    copySize = GET_SIZE(HDRP(oldptr));
-    if (size < copySize)
-        copySize = size;
-    memcpy(newptr, oldptr, copySize);
-    mm_free(oldptr);
+
+    size_t old_size = GET_SIZE(HDRP(ptr)) - DSIZE ;
+    size_t copy_size = (size < old_size) ? size : old_size;
+    memcpy(newptr, ptr, copy_size);
+    mm_free(ptr);
     return newptr;
 }
