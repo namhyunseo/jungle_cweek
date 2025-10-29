@@ -279,7 +279,6 @@ void spliting(void *ptr, size_t asize)
 // ptr -> payload 시작 주소 
 void mm_free(void *ptr)
 {
-    printf("free 처리 : \n");
     if(ptr == NULL) return;
     size_t size = GET_SIZE(HDRP(ptr)); //현재 블록 크기
     PUT(HDRP(ptr), PACK(size, 0)); // header -> free로 표시

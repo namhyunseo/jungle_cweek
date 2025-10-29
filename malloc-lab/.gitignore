@@ -1,0 +1,6 @@
+core
+*.o
+*.out
+*.log
+*.swp
+.DS_Store
