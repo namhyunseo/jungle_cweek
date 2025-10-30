@@ -1,14 +1,3 @@
-/*
- * mm-naive.c - 가장 빠르지만 메모리 효율은 최악인 malloc 패키지.
- *
- * 이 순진한(naive) 방식에서는, 블록을 할당할 때 단지 brk 포인터(힙의 끝 지점)를
- * 증가시키기만 한다. 블록은 순수 페이로드로만 이루어지며, 헤더나 푸터가 없다.
- * 블록들은 결합(coalesce)되거나 재사용되지 않는다. realloc은
- * mm_malloc과 mm_free를 그대로 이용해 직접 구현되어 있다.
- *
- * 학생들을 위한 노트: 아래의 헤더 주석을 여러분의 해법을
- * 상위 수준에서 설명하는 여러분만의 헤더 주석으로 교체하라.
- */
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
@@ -36,7 +25,7 @@ team_t team = {
 
 #define WSIZE       4
 #define DSIZE       8
-#define CHUNKSIZE  (1 << 12)
+#define CHUNKSIZE  (1 << 8)
 #define ALIGNMENT 8
 #define PTRSZ sizeof(void *)
 #define MIN (DSIZE + 2 * PTRSZ) // 24 bytes on 64bit
@@ -60,12 +49,11 @@ static void *coalesce(void *bp);
 static void *extend_heap(size_t words);
 static void *first_fit(size_t size);
 static void place(void *ptr, size_t size);
-static void spliting(void *ptr, size_t size);
-static char *next_fit(size_t size);
-static char *heap_listp = NULL; //프롤로그의 payload 진입점
-static void *exp_list_head = NULL; //list head
+static void *next_fit(size_t size);
 static void add_list(void *bp);
 static void delete_list(void *bp);
+static void *heap_listp = NULL; //프롤로그의 payload 진입점
+static void *exp_list_head = NULL; //list head
 
 //////////////////////////////////////////////////////////////////////////
 
@@ -85,7 +73,8 @@ int mm_init(void)
     return 0;
 }
 
-// 새로운 가용 블럭을 만든다.
+// 입력 : 필요한 크기 
+// 출력 : 새로운 가용 블럭 주소 (unlinked)
 static void *extend_heap(size_t words)
 {
     char *bp; //payload 포지션 
@@ -100,19 +89,15 @@ static void *extend_heap(size_t words)
     PUT(HDRP(NEXT_BLKP(bp)), PACK(0,1)); //new epilheader
     return coalesce(bp);
 }
-/////////////////////////////////////////////////////////////////////
-static inline int is_linked(void *bp){
-    return (bp == exp_list_head) || PREV(bp) || NEXT(bp);
-}
+
+
 void add_list(void *bp)
 {
-    //리스트에 이미 있는 요청이 들어올 경우
-    // if (is_linked(bp)) delete_list(bp);
     //LIFO -> 새로운 블럭을 head에 연결
     //head에 연결된게 없을 때
     //head에 연결된게 있을 때
 
-    // if(bp == exp_list_head) return;
+    if(bp == exp_list_head) return;
     PREV(bp) = NULL;
     NEXT(bp) = exp_list_head;
     
@@ -122,16 +107,6 @@ void add_list(void *bp)
     exp_list_head = bp;
 
 }
-// static void add_list(void *bp) {
-//     // 이미 리스트에 있으면 먼저 빼기 (head에 자기 자신을 다시 넣는 사고 방지)
-//     if (bp == exp_list_head || PREV(bp) != NULL || NEXT(bp) != NULL)
-//         delete_list(bp);
-
-//     PREV(bp) = NULL;
-//     NEXT(bp) = exp_list_head;
-//     if (exp_list_head) PREV(exp_list_head) = bp;
-//     exp_list_head = bp;
-// }
 
 void delete_list(void *bp)
 {
@@ -159,7 +134,7 @@ void *mm_malloc(size_t size)
     if(asize == 0) return NULL;
     // size 정렬 -> 최소 크기 16바이트 + 8의 배수
     if(asize < MIN){ // 24B 보다 작을 경우
-        asize = 2 * MIN; // 24로 설정
+        asize = MIN; // 24로 설정
     }
     if((ptr = first_fit(asize)) != NULL){
         place(ptr, asize);
@@ -172,78 +147,77 @@ void *mm_malloc(size_t size)
     return ptr;
 }
 
-/* first-fit for implicit
-char *first_fit(size_t asize)
-{
-    void *bp = NEXT_BLKP(heap_listp);
-    int lim = 16;
-    for (; GET_SIZE(HDRP(bp)) != 0; bp = NEXT_BLKP(bp)) {
-        if (!GET_ALLOC(HDRP(bp)) && asize <= GET_SIZE(HDRP(bp))) {
-            return bp;
-        }
-    }
-    return NULL;
-}
-*/
 
-/* next-fit 
-char *next_fit(size_t size)
-{
-    return;
-}
-*/
-
-// for explicit 
-// char *first_fit(size_t asize)
-// {
-//     if (asize == 0) return NULL;
-//     void *bp = exp_list_head; //head에 연결된 주소
-
-//     for(; bp != NULL; bp = NEXT(bp)){
-//         if(asize <= GET_SIZE(HDRP(bp))){
+// void *first_fit(size_t asize) {
+//     for (void *bp = exp_list_head; bp; bp = NEXT(bp)) {
+//         if (GET_SIZE(HDRP(bp)) >= asize){
 //             return bp;
 //         }
 //     }
 //     return NULL;
 // }
-/* for implicit
-void spliting(void *ptr, size_t asize)
-{
-    // 분할 할 block과 넣을 블럭의 사이즈를 가져온다.
-    size_t csize = GET_SIZE(HDRP(ptr));
-    size_t rem = csize - asize;
 
-    PUT(HDRP(ptr), PACK(asize, 1));
-    PUT(FTRP(ptr), PACK(asize, 1));
+// void *first_fit(size_t asize){
+//     const size_t CAP = 48;
+//     void *best_cap = NULL;
+//     size_t best_cap_rem = (size_t)-1;
 
-    void *next = NEXT_BLKP(ptr);
-    PUT(HDRP(next),PACK(rem, 0));
-    PUT(FTRP(next),PACK(rem, 0));
-}
-*/
+//     void *best_any = NULL;
+//     size_t best_any_rem = (size_t)-1;
 
-void *first_fit(size_t asize) {
-    for (void *bp = exp_list_head; bp; bp = NEXT(bp)) {
-        if (GET_SIZE(HDRP(bp)) >= asize)
-            return bp;
-    }
-    return NULL;
-}
+//     for(void *bp = exp_list_head; bp; bp=NEXT(bp)){
+//         size_t sz = GET_SIZE(HDRP(bp));
+//         if(sz < asize) continue;
+        
+//         size_t rem = sz - asize;
+//         size_t eff_rem = (rem >= MIN) ? rem : 0;
 
-// before merge with spliting
-// void place(void *ptr, volatile size_t asize){
-//     size_t csize = GET_SIZE(HDRP(ptr));
-//     size_t rem = csize - asize;
-
-//     if(rem >= MIN) spliting(ptr, asize);
-//     else {
-//         PUT(HDRP(ptr), PACK(csize, 1));
-//         PUT(FTRP(ptr), PACK(csize, 1));
-//         delete_list(ptr);
+//         if(eff_rem <= CAP){
+//             if (best_cap == NULL || eff_rem < best_cap_rem ||
+//                 (eff_rem == best_cap_rem && sz < GET_SIZE(HDRP(best_cap)))) {
+//                 best_cap = bp;
+//                 best_cap_rem = eff_rem;
+//             }
+//             } else {
+//             if (best_any == NULL || eff_rem < best_any_rem) {
+//                 best_any = bp;
+//                 best_any_rem = eff_rem;
+//             }
+//         }
 //     }
+//     return best_cap ? best_cap : best_any;
+
 // }
 
-void place(void *ptr, volatile size_t asize){
+void *first_fit(size_t asize) {
+    const size_t CAP_WASTE = 128;               
+    void *best_cap = NULL;  size_t best_cap_rem = (size_t)-1;
+    void *best_any = NULL;  size_t best_any_rem = (size_t)-1;
+
+    for (void *bp = exp_list_head; bp; bp = NEXT(bp)) {
+        size_t sz = GET_SIZE(HDRP(bp));
+        if (sz < asize) continue;
+
+        size_t rem = sz - asize;
+        size_t eff = (rem >= MIN) ? rem : 0;    
+
+        if (eff <= CAP_WASTE) {
+            if (!best_cap || eff < best_cap_rem ||
+               (eff == best_cap_rem && sz < GET_SIZE(HDRP(best_cap)))) {
+                best_cap = bp; best_cap_rem = eff;
+                if (eff == 0) return bp;       
+            }
+        } else {
+            if (!best_any || eff < best_any_rem) {
+                best_any = bp; best_any_rem = eff;
+            }
+        }
+    }
+    return best_cap ? best_cap : best_any;
+}
+
+
+void place(void *ptr, size_t asize){
     size_t csize = GET_SIZE(HDRP(ptr));
     size_t rem = csize - asize;
     delete_list(ptr); //우선은 list에서 제거
@@ -252,37 +226,15 @@ void place(void *ptr, volatile size_t asize){
         PUT(HDRP(ptr), PACK(asize, 1));
         PUT(FTRP(ptr), PACK(asize, 1));
         void *next = NEXT_BLKP(ptr);
-        PUT(HDRP(next), PACK(csize, 0));
-        PUT(FTRP(next), PACK(csize, 0));
-        coalesce(next); // 분할된 부분은 다시 병합
+        PUT(HDRP(next), PACK(rem, 0));
+        PUT(FTRP(next), PACK(rem, 0));
+        // coalesce(next); // 분할된 부분은 다시 병합
+        add_list(next);
     }else{
         PUT(HDRP(ptr), PACK(csize, 1));
         PUT(FTRP(ptr), PACK(csize, 1));
     }
 }
-
-
-// // for explicit
-// void spliting(void *ptr, size_t asize)
-// {
-//     size_t csize = GET_SIZE(HDRP(ptr));
-//     // printf("csize : %zu \n", csize);
-//     // printf("asize : %zu \n", asize);
-//     size_t rem = csize - asize;
-    
-//     delete_list(ptr); //아예 분리 해버리고 자른부분만 맨앞으로 연결
-//     PUT(HDRP(ptr), PACK(asize, 1));
-//     PUT(FTRP(ptr), PACK(asize, 1));
-
-//     void *next = NEXT_BLKP(ptr); 
-//     PUT(HDRP(next),PACK(rem, 0));
-//     PUT(FTRP(next),PACK(rem, 0));
-//     // add_list(next); // 잘랐던 부분 다시 넣어줌
-//     coalesce(next);
-// }
-
-
-
 
 // ptr -> payload 시작 주소 
 void mm_free(void *ptr)
@@ -296,51 +248,20 @@ void mm_free(void *ptr)
 }
 
 
-/* for implicit
-static void *coalesce(void *ptr)
-{
-    size_t prev = GET_ALLOC(FTRP(PREV_BLKP(ptr)));
-    size_t next = GET_ALLOC(HDRP(NEXT_BLKP(ptr)));
-    size_t size = GET_SIZE(HDRP(ptr));
-
-    if(prev && next){
-        return ptr;
-    }
-    else if(prev && !next){ //next만 할당 가능
-        size += GET_SIZE(HDRP(NEXT_BLKP(ptr)));
-        PUT(HDRP(ptr), PACK(size, 0)); //헤더에 정보 기록
-        PUT(FTRP(ptr), PACK(size, 0)); //푸터에 정보 기록
-        return ptr;
-    }else if(!prev && next){  // prev가용
-        size += GET_SIZE(HDRP(PREV_BLKP(ptr)));
-        // 현재 블럭의 footer에 병합 후 사이즈 기록
-        PUT(FTRP(ptr), PACK(size, 0));
-        PUT(HDRP(PREV_BLKP(ptr)), PACK(size, 0));
-        return PREV_BLKP(ptr);
-    }else{ //둘 다 가용
-        size += GET_SIZE(HDRP(PREV_BLKP(ptr))) + GET_SIZE(HDRP(NEXT_BLKP(ptr)));
-        PUT(HDRP(PREV_BLKP(ptr)), PACK(size, 0));
-        PUT(FTRP(NEXT_BLKP(ptr)), PACK(size, 0));
-        return PREV_BLKP(ptr);
-    }
-    return ptr;
-}
-*/
-
-
 // 입력 -> free block, but not linked
 // 결과 -> linked block
 // 호출부 -> place, free, place
 void *coalesce(void *bp){
-    volatile size_t curr = GET_SIZE(HDRP(bp));
-    volatile size_t prev = GET_ALLOC(FTRP(PREV_BLKP(bp)));
-    volatile size_t next = GET_ALLOC(HDRP(NEXT_BLKP(bp)));
+    size_t curr = GET_SIZE(HDRP(bp));
+    size_t prev = GET_ALLOC(FTRP(PREV_BLKP(bp)));
+    size_t next = GET_ALLOC(HDRP(NEXT_BLKP(bp)));
     // size_t prev = 0;
     // size_t next = 0;
 
     void *prevp = PREV_BLKP(bp);
     void *nextp = NEXT_BLKP(bp);
 
+    
     if (!prev) delete_list(prevp); // 가용상태이면 리스트에서 삭제
     if (!next) delete_list(nextp); 
 
@@ -367,21 +288,81 @@ void *coalesce(void *bp){
     
 }
 
+
 void *mm_realloc(void *ptr, size_t size)
 {
-    if (ptr == NULL)
-        return mm_malloc(size);
-    if (size == 0) {
-        mm_free(ptr);
-        return NULL;
+    if (ptr == NULL) return mm_malloc(size);
+    if (size == 0) { mm_free(ptr); return NULL; }
+
+    // 원하는 블록 크기 정규화
+    size_t asize = ALIGN(size + DSIZE);
+    if (asize < MIN) asize = MIN;
+
+    size_t csize = GET_SIZE(HDRP(ptr));
+
+    // 1) 축소: 남는 공간이 충분하면 꼬리 분할하여 free
+    if (asize <= csize) {
+        size_t rem = csize - asize;
+        if (rem >= MIN) {
+            // 현재 블록을 asize로 줄이고
+            PUT(HDRP(ptr), PACK(asize, 1));
+            PUT(FTRP(ptr), PACK(asize, 1));
+
+            // 뒤쪽을 새 free 블록으로 만들기
+            void *nbp = (char *)ptr + asize;
+            PUT(HDRP(nbp), PACK(rem, 0));
+            PUT(FTRP(nbp), PACK(rem, 0));
+            coalesce(nbp); // 분할 조각 병합/삽입
+        }
+        return ptr; // as-is
     }
 
-    void *newptr = mm_malloc(size);
-    if (newptr == NULL)
-        return NULL;
+    // 2) 확장: 오른쪽 이웃이 free면 병합 시도
+    void *nextp = NEXT_BLKP(ptr);
+    size_t next_alloc = GET_ALLOC(HDRP(nextp));
+    size_t next_size  = GET_SIZE(HDRP(nextp));
 
-    size_t old_size = GET_SIZE(HDRP(ptr)) - DSIZE ;
-    size_t copy_size = (size < old_size) ? size : old_size;
+    // 2-1) 에필로그 바로 앞이면 힙을 늘려서 next를 free로 만든 뒤 다시 계산
+    if (next_size == 0 && next_alloc == 1) {
+        size_t need = asize - csize;
+        size_t words = (need + WSIZE - 1) / WSIZE;         // byte→word 올림
+        if (extend_heap(words) == NULL) return NULL;       // 힙 확장 실패시 포기
+        nextp = NEXT_BLKP(ptr);
+        next_alloc = GET_ALLOC(HDRP(nextp));
+        next_size  = GET_SIZE(HDRP(nextp));
+    }
+
+    // 2-2) 오른쪽 이웃이 free라면 잡아먹기
+    if (next_alloc == 0) {
+        size_t total = csize + next_size;
+        if (total >= asize) {
+            // 이웃 free 블록은 리스트에서 먼저 제거
+            delete_list(nextp);
+
+            size_t rem = total - asize;
+            if (rem >= MIN) {
+                // 앞은 할당 asize, 뒤는 새 free(rem)
+                PUT(HDRP(ptr), PACK(asize, 1));
+                PUT(FTRP(ptr), PACK(asize, 1));
+                void *nbp = (char *)ptr + asize;
+                PUT(HDRP(nbp), PACK(rem, 0));
+                PUT(FTRP(nbp), PACK(rem, 0));
+                coalesce(nbp);
+            } else {
+                // 잔여가 너무 작으면 전부 할당으로 흡수
+                PUT(HDRP(ptr), PACK(total, 1));
+                PUT(FTRP(ptr), PACK(total, 1));
+            }
+            return ptr; // in-place 확장 성공
+        }
+    }
+
+    // 3) in-place 실패 → 새로 할당하여 복사
+    void *newptr = mm_malloc(size);
+    if (newptr == NULL) return NULL;
+
+    size_t copy_size = csize - DSIZE;        // payload 크기
+    if (size < copy_size) copy_size = size;  // 요청한 크기가 더 작으면 그만큼만
     memcpy(newptr, ptr, copy_size);
     mm_free(ptr);
     return newptr;
