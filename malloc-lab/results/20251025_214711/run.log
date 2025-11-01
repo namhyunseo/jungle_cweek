@@ -1,0 +1,13 @@
+===== RUN @ 2025. 10. 25. (토) 21:47:11 KST =====
+getopt returned: 104
+
+>>> TRACE -v
+getopt returned: 86
+getopt returned: 102
+Team Name:ateam
+Member 1 :Harry Bovik:bovik@cs.cmu.edu
+Measuring performance with gettimeofday().
+
+Testing mm malloc
+Reading tracefile: -v
+Could not open ./-v in read_trace: No such file or directory
