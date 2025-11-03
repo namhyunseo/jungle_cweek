@@ -16,6 +16,8 @@ void get_filetype(char *filename, char *filetype);
 void serve_dynamic(int fd, char *filename, char *cgiargs);
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg,char *longmsg);
 
+
+
 int main(int argc, char **argv)
 {
   int listenfd, connfd;
@@ -37,37 +39,16 @@ int main(int argc, char **argv)
     clientlen = sizeof(clientaddr);
     connfd = Accept(listenfd, (SA *)&clientaddr, &clientlen); // line:netp:tiny:accept₩
     Getnameinfo((SA *)&clientaddr, clientlen, hostname, MAXLINE, port, MAXLINE, 0);
-    printf("Accepted connection from (%s, %s)\n", hostname, port);
+    printf("Accepted connection from (%s, %s\n", hostname, port);
     doit(connfd);  // line:netp:tiny:doit
     Close(connfd); // line:netp:tiny:close
   }
 }
-/**
- * todo
- * [v] doit
- * [v] Http transaction 처리
- * [v] 오류 응답 생성
- * [v] 요청 헤더 읽기
- * [v] URI 분석기
- * [v] 정적 콘텐츠 생성기
- * [v] 동적 콘텐츠 생성기
- * 
- * 우선은 따라 적기만, 이후에 주석달면서 분석
- * 따라 적으면서 흐름 잡기
- */
+
+
 
 void doit(int fd)
 {
-  /**
-   * 1.	요청 라인 읽기 (rio_readlineb)
-   * 2.	요청 메서드 검사 (GET만 지원)
-   * 3.	요청 헤더 읽고 무시
-   * 4.	URI 파싱 (정적 or 동적 콘텐츠 판별)
-   * 5.	파일 유효성 검사
-   * 6.	정적 요청이면 serve_static() 호출
-   * 7.	동적 요청이면 serve_dynamic() 호출
-   */
-  
   // 변수 설정
   int is_static;
   struct stat sbuf;
@@ -80,7 +61,7 @@ void doit(int fd)
   Rio_readlineb(&rio, buf, MAXLINE);
   printf("Request headers :\n");
   printf("%s", buf);
-  sscanf(buf, "%s %s %s", method, uri, version); //입력이 이렇게 들어오나보네
+  sscanf(buf, "%s %s %s", method, uri, version); //버퍼에 있는 내용 변수에 할당
   if(strcasecmp(method, "GET")){
     clienterror(fd, method, "501", "Not implemented", "Tiny does not implement this method");
     return;
@@ -109,9 +90,11 @@ void doit(int fd)
           clienterror(fd, filename, "403", "Forbidden", "Tiny couldn't run the CGI program");
           return;
     }
-    serve_dynamic(fd, filename, sbuf.st_size);
+    serve_dynamic(fd, filename, cgiargs); // 3번째 인자 해결
   }
 }
+
+
 
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg,char *longmsg)
 {
@@ -133,6 +116,7 @@ void clienterror(int fd, char *cause, char *errnum, char *shortmsg,char *longmsg
 }
 
 
+
 void read_requesthdrs(rio_t *rp){
   char buf[MAXLINE];
 
@@ -143,6 +127,7 @@ void read_requesthdrs(rio_t *rp){
   }
   return;
 }
+
 
 
 int parse_uri(char *uri, char *filename, char *cgiargs)
@@ -173,6 +158,8 @@ int parse_uri(char *uri, char *filename, char *cgiargs)
   }
 }
 
+
+
 void serve_static(int fd, char *filename, int filesize)
 {
   int srcfd;
@@ -189,11 +176,21 @@ void serve_static(int fd, char *filename, int filesize)
   printf("%s", buf);
 
   srcfd = Open(filename, O_RDONLY, 0); //파일을 오픈
-  srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);
+  /**
+   * 굳이 왜 mmap을 사용해서 하는거지?
+   * mmap을 사용하지 않으면
+   */
+  // srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);
+  srcp = Malloc(filesize);
+  // srcp 안에 srcfd에서 읽은 값을 넣어줘야 한다.
+  Rio_readn(srcfd, srcp, filesize);
   Close(srcfd);
   Rio_writen(fd, srcp, filesize);
-  Munmap(srcp, filesize);
+  // Munmap(srcp, filesize);
+  free(srcp);
 }
+
+
 
 void get_filetype(char *filename, char *filetype)
 {
@@ -215,11 +212,11 @@ void serve_dynamic(int fd, char *filename, char *cgiargs)
 
   sprintf(buf, "HTTP/1.0 200 OK\r\n");
   Rio_writen(fd, buf, strlen(buf));
-  sprintf(buf, "Server: Tiny web server \r\n");
+  sprintf(buf, "Server: Tiny web server\r\n");
   Rio_writen(fd, buf, strlen(buf));
 
   if(Fork() == 0){
-    setenv("QUERY_STRIN", cgiargs, 1);
+    setenv("QUERY_STRING", cgiargs, 1);
     Dup2(fd, STDOUT_FILENO);
     Execve(filename, emptylist, environ);
   }
