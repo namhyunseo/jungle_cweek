@@ -57,8 +57,8 @@ void doit(int fd)
   rio_t rio;
   
   // Rio 요청 라인 확인
-  Rio_readinitb(&rio, fd);
-  Rio_readlineb(&rio, buf, MAXLINE);
+  Rio_readinitb(&rio, fd); // 파일 디스크립터에서 리오 버퍼가 읽어올 수 있도록 초기화.
+  Rio_readlineb(&rio, buf, MAXLINE); // 리오 버퍼에 저장된 데이터를 buf로 가져온다.
   printf("Request headers :\n");
   printf("%s", buf);
   sscanf(buf, "%s %s %s", method, uri, version); //버퍼에 있는 내용 변수에 할당
@@ -76,6 +76,7 @@ void doit(int fd)
     return;
   }
 
+  /** 정적, 동적 요청 분기 */
   if(is_static){
     // 파일에 접근 가능한지
     if(!(S_ISREG(sbuf.st_mode)) || !(S_IRUSR & sbuf.st_mode)){
@@ -117,6 +118,7 @@ void clienterror(int fd, char *cause, char *errnum, char *shortmsg,char *longmsg
 
 
 
+/** 요청 헤더 읽고 무시하기(프린트만 해준다.) */
 void read_requesthdrs(rio_t *rp){
   char buf[MAXLINE];
 
@@ -129,12 +131,11 @@ void read_requesthdrs(rio_t *rp){
 }
 
 
-
+/** 헤더에서  */
 int parse_uri(char *uri, char *filename, char *cgiargs)
 {
   char *ptr;
   if(!strstr(uri, "cgi-bin")){
-    // strcpy(char *dest, char *src)
     // strcpy -> src를 dest에 저장
     strcpy(cgiargs, "");
     strcpy(filename, ".");
@@ -176,10 +177,6 @@ void serve_static(int fd, char *filename, int filesize)
   printf("%s", buf);
 
   srcfd = Open(filename, O_RDONLY, 0); //파일을 오픈
-  /**
-   * 굳이 왜 mmap을 사용해서 하는거지?
-   * mmap을 사용하지 않으면
-   */
   // srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);
   srcp = Malloc(filesize);
   // srcp 안에 srcfd에서 읽은 값을 넣어줘야 한다.
