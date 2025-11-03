@@ -35,8 +35,7 @@ int main(int argc, char **argv)
   while (1)
   {
     clientlen = sizeof(clientaddr);
-    connfd = Accept(listenfd, (SA *)&clientaddr,
-                    &clientlen); // line:netp:tiny:accept₩
+    connfd = Accept(listenfd, (SA *)&clientaddr, &clientlen); // line:netp:tiny:accept₩
     Getnameinfo((SA *)&clientaddr, clientlen, hostname, MAXLINE, port, MAXLINE, 0);
     printf("Accepted connection from (%s, %s)\n", hostname, port);
     doit(connfd);  // line:netp:tiny:doit
@@ -49,9 +48,9 @@ int main(int argc, char **argv)
  * [v] Http transaction 처리
  * [v] 오류 응답 생성
  * [v] 요청 헤더 읽기
- * [] URI 분석기
- * [] 정적 콘텐츠 생성기
- * [] 동적 콘텐츠 생성기
+ * [v] URI 분석기
+ * [v] 정적 콘텐츠 생성기
+ * [v] 동적 콘텐츠 생성기
  * 
  * 우선은 따라 적기만, 이후에 주석달면서 분석
  * 따라 적으면서 흐름 잡기
@@ -146,7 +145,7 @@ void read_requesthdrs(rio_t *rp){
 }
 
 
-int parse_url(char *uri, char *filename, char *cgiargs)
+int parse_uri(char *uri, char *filename, char *cgiargs)
 {
   char *ptr;
   if(!strstr(uri, "cgi-bin")){
@@ -157,7 +156,7 @@ int parse_url(char *uri, char *filename, char *cgiargs)
     strcat(filename, uri);
     if(uri[strlen(uri)-1] == '/'){
       // stract -> dest + src 문자열 이어 붙히기
-      stract(filename, "home.html");
+      strcat(filename, "home.html");
     }
     return 1;
   }
@@ -169,7 +168,7 @@ int parse_url(char *uri, char *filename, char *cgiargs)
     }
     else strcpy(cgiargs, "");
     strcpy(filename, ".");
-    strcat(filename, "uri");
+    strcat(filename, uri); //"uri" -> uri 수정
     return 0;
   }
 }
