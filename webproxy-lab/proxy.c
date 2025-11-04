@@ -8,7 +8,7 @@
 /* You won't lose style points for including this long line in your code */
 void doit(int fd);
 void parse_uri(char *uri, char *hostname, char *path, int *port);
-void read_requesthdrs(rio_t *rp);
+void read_requesthdrs(rio_t *rp, char *extrahdr);
 static const char *user_agent_hdr =
     "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 "
     "Firefox/10.0.3\r\n";
@@ -47,7 +47,7 @@ void doit(int fd){
   // 서버 응답 받아서 보낸다.
   
   char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
-  char bufs[MAXLINE], host[MAXLINE], path[MAXLINE], bufc[MAXLINE];
+  char bufs[MAXLINE], host[MAXLINE], path[MAXLINE], bufc[MAXLINE], extrahdr[MAXLINE];
   rio_t rio;
   rio_t rios;
   int *port;
@@ -62,49 +62,73 @@ void doit(int fd){
   if(!strstr(uri, "http://")){ // strstr : 부분 문자열 검색
     printf("no original addr \n");
   }
-  read_requesthdrs(&rio); //헤더 읽기
+  read_requesthdrs(&rio, extrahdr); //헤더 읽기
 
-  printf("parsing.... \n");
-  // 파싱
   parse_uri(uri, host, path, &port);
-  printf("parsing done.... \n");
-  // HTTP message
 
-  sprintf(bufs,
-    "GET %s HTTP/1.0\r\n"
-    "Host: %s\r\n"
-    "%s"
-    "Connection: close\r\n"
-    "Proxy-Connection: close\r\n"
-    "\r\n",
-    path, host, user_agent_hdr
-  );
+  if(port == 80){
+    sprintf(bufs,
+      "GET %s HTTP/1.0\r\n"
+      "Host: %s\r\n"
+      "%s"
+      "Connection: close\r\n"
+      "Proxy-Connection: close\r\n"
+      "\r\n",
+      path, host, user_agent_hdr
+    );
+  }
+  else{
+    sprintf(bufs,
+      "GET %s HTTP/1.0\r\n"
+      "Host: %s:%d\r\n"
+      "%s"
+      "Connection: close\r\n"
+      "Proxy-Connection: close\r\n"
+      "\r\n",
+      path, host, port, user_agent_hdr
+    ); 
+  }
+
+  // 웹 서버 연결
   char portstr[16];
   sprintf(portstr, "%d", port);
-  printf("%c %s", portstr, host);
   int svrfd = Open_clientfd(host, portstr);
+
+  // 웹 서버에 데이터 전달
   Rio_readinitb(&rios, svrfd);
-  printf("server connect \r\n");
+  printf("to server \n");
+  printf("%s", bufs);
   Rio_writen(svrfd, bufs, strlen(bufs));
-  printf("server connected \r\n");
-  Rio_readlineb(&rios, bufc, MAXLINE);
-  Rio_writen(fd, bufc, strlen(bufc));
+  // Rio_readlineb(&rios, bufc, MAXLINE);
+  ssize_t n;
+  while ((n = Rio_readnb(&rios, bufc, MAXLINE)) > 0) {
+    printf("%s",bufc);
+    Rio_writen(fd, bufc, n);   // 클라이언트에게 전달
+  }
   Close(svrfd);
 }
 
 
 
 
-void read_requesthdrs(rio_t *rp)
+void read_requesthdrs(rio_t *rp, char *extrahdr)
 {
   char buf[MAXLINE];
+  while(1){
+    if(Rio_readlineb(rp, buf, MAXLINE) <= 0) break;
+    if(!strcmp(buf, "\r\n")) break;
 
-  Rio_readlineb(rp, buf, MAXLINE);
-  printf("%s", buf);
-  while (strcmp(buf, "\r\n"))
-  {
-    Rio_readlineb(rp, buf, MAXLINE);
-    printf("%s", buf);
+    if (!strncasecmp(buf, "Host:", 5) ||
+        !strncasecmp(buf, "User-Agent:", 11) ||
+        !strncasecmp(buf, "Connection:", 11) ||
+        !strncasecmp(buf, "Proxy-Connection:", 17)) {
+      continue;
+    }
+    size_t elen = strlen(extrahdr), blen = strlen(buf);
+    if(elen + blen < MAXLINE*8 - 1){
+      memcpy(extrahdr + elen, buf, blen);
+      extrahdr[elen + blen] = '\0';
+    }
   }
   return;
 }
@@ -112,13 +136,6 @@ void read_requesthdrs(rio_t *rp)
 /** 절대 경로가 들어올 경우 */
 void parse_uri(char *uri, char *hostname, char *path, int *port)
 {
-  // port 없으면 80 처리
-  // uri 해체
-  // http:// 제외하고
-  // 그 다음 slash 만날 때 까지 = hostname
-  // 그 다음 전체를 pat
-  // 만약 :가 있으면 port 저장
-  // *port = 80;
   char *p = uri;
   if (!strncmp(p, "http://", 7)) p += 7;
   const char *slash = strchr(p, '/'); //strchr : 문자열에서 원하는 문자의 포인터 찾아내기
