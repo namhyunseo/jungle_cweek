@@ -12,13 +12,16 @@ void read_requesthdrs(rio_t *rp, char *extrahdr);
 static const char *user_agent_hdr =
     "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 "
     "Firefox/10.0.3\r\n";
+  
+void *thread(void *vargp);
 
 int main(int args, char **argv)
 {
-  int listenfd, connfd;
+  int listenfd, *connfdp;
   char hostname[MAXLINE], port[MAXLINE];
   socklen_t clientlen;
   struct sockaddr_storage clientaddr;
+  pthread_t tid;
 
   if(args != 2){
     fprintf(stderr, "usage: %s <port>\n", argv[0]);
@@ -27,13 +30,22 @@ int main(int args, char **argv)
   listenfd = Open_listenfd(argv[1]);
 
   while(1){
-    clientlen = sizeof(clientaddr);
-    connfd = Accept(listenfd, (SA *)&clientaddr, &clientlen);
-    Getnameinfo((SA *)&clientaddr, clientlen, hostname, MAXLINE, port, MAXLINE, 0);    
-    printf("Accepted connection from %s, %s\n", hostname, port);
-    doit(connfd); // 클라이언트의 요청을 받고, 서버에게 전달
-    Close(connfd);
+    clientlen = sizeof(struct sockaddr_storage);
+    connfdp = Malloc(sizeof(int));
+    *connfdp = Accept(listenfd, (SA *) &clientaddr, &clientlen);
+    Pthread_create(&tid, NULL, thread, connfdp);
   }
+}
+
+void *thread(void *vargp)
+{
+  int connfd = *((int*)vargp);
+  Pthread_detach(pthread_self());
+  Free(vargp);
+  printf("server connected\n");
+  doit(connfd);
+  Close(connfd);
+  return NULL;
 }
 
 // 입력 : 클라이언트와 연결된 소켓 fd
@@ -96,13 +108,13 @@ void doit(int fd){
 
   // 웹 서버에 데이터 전달
   Rio_readinitb(&rios, svrfd);
-  printf("to server \n");
-  printf("%s", bufs);
+  // printf("to server \n");
+  // printf("%s", bufs);
   Rio_writen(svrfd, bufs, strlen(bufs));
   // Rio_readlineb(&rios, bufc, MAXLINE);
   ssize_t n;
   while ((n = Rio_readnb(&rios, bufc, MAXLINE)) > 0) {
-    printf("%s",bufc);
+    // printf("%s",bufc);
     Rio_writen(fd, bufc, n);   // 클라이언트에게 전달
   }
   Close(svrfd);
